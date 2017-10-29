@@ -5,6 +5,7 @@
 #include <linux/netfilter_ipv6.h>
 
 #include <net/net_namespace.h>
+#include <linux/ip.h>
 
 
 MODULE_LICENSE("GPL");
@@ -18,7 +19,9 @@ static struct nf_hook_ops nfho;
 unsigned int net_hook(void *priv, struct sk_buff *skb, const struct nf_hook_state *state) {
     // accept everything
     // in progress..
-    printk(KERN_INFO "Test: protocol %d", skb->protocol);
+    struct iphdr* iph = ip_hdr(skb);
+    printk(KERN_INFO "Test: %d %d %s", skb->protocol, iph->protocol, skb->dev->name);
+
     return NF_ACCEPT;
 };
 
