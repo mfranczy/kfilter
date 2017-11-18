@@ -3,9 +3,9 @@
 #include <linux/netfilter.h>
 #include <linux/netfilter_ipv4.h>
 #include <linux/netfilter_ipv6.h>
+#include <linux/ip.h>
 
 #include <net/net_namespace.h>
-#include <linux/ip.h>
 
 
 MODULE_LICENSE("GPL");
@@ -17,10 +17,17 @@ static struct nf_hook_ops nfho;
 
 
 unsigned int net_hook(void *priv, struct sk_buff *skb, const struct nf_hook_state *state) {
-    // accept everything
-    // in progress..
     struct iphdr* iph = ip_hdr(skb);
-    printk(KERN_INFO "Test: %d %d %s", skb->protocol, iph->protocol, skb->dev->name);
+    switch (iph->protocol) {
+        case 17:
+            printk(KERN_INFO "UDP: %x %d", skb->tail, skb->len);
+            break;
+        case 6:
+            printk(KERN_INFO "TCP: %x", skb->tail);
+            break;
+        default:
+            printk(KERN_INFO "OTHER: %d", iph->protocol);
+    }
 
     return NF_ACCEPT;
 };
