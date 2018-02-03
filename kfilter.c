@@ -58,9 +58,17 @@ static void read_conf(struct sk_buff *skb) {
     msg_size = strlen(msg);
 
     nlh = (struct nlmsghdr *)skb->data;
-    sub = (subscriber *)nlmsg_data(nlh);
     printk(KERN_INFO "kfilter: New registration received: %s", (char *)nlmsg_data(nlh));
     pid = nlh->nlmsg_pid;
+
+    if (sub.confirmed) {
+        msg = "Registration refused";
+        printk(KERN_INFO "kfilter: New registration refused for pid %d", pid);
+    } else {
+        printk(KERN_INFO "kfilter: New registration confirmed for pid %d", pid);
+    }
+
+    sub.confirmed = 1;
 
     skb_out = nlmsg_new(msg_size, 0);
     if (!skb_out) {
