@@ -7,13 +7,13 @@
 
 #endif
 
-#pragma pack(push, 1)
 // MAX_PAYLOAD must be <= 32k (for kernel >= 4.9)
 // otherwise 16k
 #define MAX_PORT_SIZE 100
 #define MAX_ADDR_SIZE 100
 #define MAX_SERVICE_MSG_SIZE 1024
 
+#pragma pack(push, 1)
 struct tcp_rules { 
     uint16_t ports[MAX_PORT_SIZE];  // allocate this dynamically?
     uint32_t addr[MAX_ADDR_SIZE][4];
