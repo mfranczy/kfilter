@@ -8,7 +8,7 @@
 #include "knetwork.h"
 
 #define NETLINK_USER 31
-#define MAX_PAYLOAD 1024
+#define MAX_PAYLOAD sizeof(struct service_ctl)
 
 struct msghdr msg; // figure out why it can be in main func stack / i need memory dump HOMEWORK!!
 
@@ -16,8 +16,9 @@ struct msghdr msg; // figure out why it can be in main func stack / i need memor
 int main(int argc, char* argv[]) {
     struct sockaddr_nl src_addr, dst_addr;
     struct nlmsghdr *nlh = NULL;
-    struct subscriber sub;
     struct iovec iov;
+    struct service_ctl sctl;
+    struct service_ctl* sctl_resp;
     int s_fd, err;
 
     s_fd = socket(PF_NETLINK, SOCK_RAW, NETLINK_USER);
@@ -47,8 +48,9 @@ int main(int argc, char* argv[]) {
     nlh->nlmsg_pid = getpid();
     nlh->nlmsg_flags = 0;
 
-    strcpy(NLMSG_DATA(nlh), "REGISTER UFILTER");
-    
+    strncpy(sctl.msg, "REGISTRATION REQUEST", MAX_SERVICE_MSG_SIZE);
+    memcpy(NLMSG_DATA(nlh), &sctl, sizeof(sctl));
+ 
     iov.iov_base = (void *)nlh;
     iov.iov_len = nlh->nlmsg_len;
 
@@ -61,8 +63,16 @@ int main(int argc, char* argv[]) {
     sendmsg(s_fd, &msg, 0);
     printf("Message has been sent\n");
     recvmsg(s_fd, &msg, 0);
-    printf("Recv message: %s\n", (char *)NLMSG_DATA(nlh));
 
+    sctl_resp = (struct service_ctl*)NLMSG_DATA(nlh);
+    if (sctl_resp->pid == getpid()) {
+        // thread or proc to read packages from kernel
+        // but share the sockets
+        // send data to pipe??
+        while(1) {};
+    } else {
+        printf("Module is already sending packets to pid: %d", sctl_resp->pid);
+    }
     close(s_fd);
 
     return 0;

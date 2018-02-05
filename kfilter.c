@@ -7,14 +7,15 @@
 #include <linux/tcp.h>
 #include <linux/in.h>
 #include <linux/types.h>
-#include <net/sock.h>
 #include <linux/netlink.h>
 #include <linux/skbuff.h>
+#include <net/sock.h>
 #include <net/net_namespace.h>
 
 #include "knetwork.h"
 
 #define NETLINK_USER 31
+
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Marcin Franczyk");
@@ -23,10 +24,21 @@ MODULE_DESCRIPTION("Packets filter");
 
 static struct nf_hook_ops nfho;
 static struct sock *nl_sk = NULL;
-static struct subscriber sub;
+static struct service_ctl sctl;
+static pid_t upid = 0;
 
+
+void log_info(char* str) {
+    printk(KERN_INFO "kfilter: %s", str);
+}
+
+void log_err(char* str) {
+    printk(KERN_ALERT "kfilter: %s", str);
+}
 
 unsigned int net_hook(void *priv, struct sk_buff *skb, const struct nf_hook_state *state) {
+    // filter only incoming packets
+    // filter outcoming packets / maybe different functions?
     struct iphdr* iph = ip_hdr(skb);
     uint saddr = iph->saddr;
     uint daddr = iph->daddr;
@@ -48,43 +60,40 @@ unsigned int net_hook(void *priv, struct sk_buff *skb, const struct nf_hook_stat
     return NF_ACCEPT;
 };
 
-static void read_conf(struct sk_buff *skb) {
-    // set flag if someone is connected
+static void reg_hook(struct sk_buff *skb) {
     struct nlmsghdr *nlh;
     struct sk_buff *skb_out;
-    int pid, msg_size, err;
-    char *msg = "Registration confirmed";
+    pid_t pid;
+    int sctl_size, err;
 
-    msg_size = strlen(msg);
-
-    nlh = (struct nlmsghdr *)skb->data;
-    printk(KERN_INFO "kfilter: New registration received: %s", (char *)nlmsg_data(nlh));
+    nlh = (struct nlmsghdr*)skb->data;
     pid = nlh->nlmsg_pid;
-
-    if (sub.confirmed) {
-        msg = "Registration refused";
-        printk(KERN_INFO "kfilter: New registration refused for pid %d", pid);
+    if (upid) {
+        sctl.pid = upid;
+        // strncpy
+        log_info("registration for new pid refused");
     } else {
-        printk(KERN_INFO "kfilter: New registration confirmed for pid %d", pid);
+        upid = pid;
+        sctl.pid = pid;
+        log_info("registration for new pid accepted");
     }
 
-    sub.confirmed = 1;
-
-    skb_out = nlmsg_new(msg_size, 0);
+    sctl_size = sizeof(sctl);
+    skb_out = nlmsg_new(sctl_size, 0);
     if (!skb_out) {
-        printk(KERN_ERR "kfilter: Unable to create new skb_buff");
+        log_err("unable to create new skb_buff");
         return;
     }
-    nlh = nlmsg_put(skb_out, 0, 0, NLMSG_DONE, msg_size, 0);
-    NETLINK_CB(skb_out).dst_group = 0;
-    strncpy(nlmsg_data(nlh), msg, msg_size);
 
+    nlh = nlmsg_put(skb_out, 0, 0, NLMSG_DONE, sctl_size, 0);
+    NETLINK_CB(skb_out).dst_group = 0;
+    memcpy(nlmsg_data(nlh), &sctl, sctl_size);
     err = nlmsg_unicast(nl_sk, skb_out, pid);
     if (err < 0) {
-        printk(KERN_ERR "kfilter: Could not send msg to userspace for pid: %d", pid);
+        log_err("could not send registration info back to the userspace client");
     }
 
-};
+}
 
 void send_data(void) {
 
@@ -92,10 +101,10 @@ void send_data(void) {
 
 static int filter_init(void) {
     struct netlink_kernel_cfg k_cfg = {
-        .input = read_conf, 
+        .input = reg_hook, 
     };
 
-    printk(KERN_INFO "kfilter: Initializing kfilter module");
+    log_info("initializing module...");
 
     nfho.hook = net_hook;
     nfho.hooknum = NF_INET_PRE_ROUTING;
@@ -105,18 +114,18 @@ static int filter_init(void) {
     nf_register_net_hook(&init_net, &nfho);
     nl_sk = netlink_kernel_create(&init_net, NETLINK_USER, &k_cfg);
     if (!nl_sk) {
-        printk(KERN_ALERT "Error occured - unable to open NETLINK socket");
+        log_err("unable to open NETLINK socket");
         return -EINVAL;
     }
 
-    printk(KERN_INFO "kfilter: kfilter has started");
+    log_info("module has been initialized");
     return 0;
 }
 
 static void filter_exit(void) {
     nf_unregister_net_hook(&init_net, &nfho);
     netlink_kernel_release(nl_sk);
-    printk(KERN_INFO "kfilter: has been removed");
+    log_info("module has been removed");
 }
 
 module_init(filter_init);
