@@ -4,6 +4,7 @@
 #include <linux/netlink.h>
 #include <unistd.h>
 #include <string.h>
+#include <errno.h>
 
 #include "knetwork.h"
 
@@ -19,11 +20,11 @@ int main(int argc, char* argv[]) {
     struct iovec iov;
     struct service_ctl sctl;
     struct service_ctl* sctl_resp;
-    int s_fd, err;
+    int s_fd, rc;
 
     s_fd = socket(PF_NETLINK, SOCK_RAW, NETLINK_USER);
     if (s_fd < 0) {
-        printf("Error occured - unable to open NETLINK socket");
+        printf("rcor occured - unable to open NETLINK socket");
         return -1;
     }
 
@@ -31,10 +32,10 @@ int main(int argc, char* argv[]) {
     src_addr.nl_family = AF_NETLINK;
     src_addr.nl_pid = getpid();
 
-    err = bind(s_fd, (struct sockaddr *)&src_addr, sizeof(src_addr));
-    if (err) {
-        printf("Error %d", err);
-        return err;
+    rc = bind(s_fd, (struct sockaddr *)&src_addr, sizeof(src_addr));
+    if (rc) {
+        printf("Error %s", strerror(errno));
+        return rc;
     }
 
     memset(&dst_addr, 0, sizeof(dst_addr));
@@ -63,13 +64,23 @@ int main(int argc, char* argv[]) {
     sendmsg(s_fd, &msg, 0);
     printf("Message has been sent\n");
     recvmsg(s_fd, &msg, 0);
+    printf("Let's work");
 
     sctl_resp = (struct service_ctl*)NLMSG_DATA(nlh);
     if (sctl_resp->pid == getpid()) {
+        printf("Ready to work");
         // thread or proc to read packages from kernel
         // but share the sockets
-        // send data to pipe??
-        while(1) {};
+        // watch config files
+        while(1) {
+            // get data 
+            rc = recvmsg(s_fd, &msg, 0);
+            if (rc == -1) {
+                printf("Error: %s", strerror(errno));
+                continue;
+            }
+
+        };
     } else {
         printf("Module is already sending packets to pid: %d", sctl_resp->pid);
     }

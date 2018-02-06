@@ -24,7 +24,8 @@ MODULE_DESCRIPTION("Packets filter");
 
 static struct nf_hook_ops nfho;
 static struct sock *nl_sk = NULL;
-static struct service_ctl sctl;
+struct net_data data;
+
 static pid_t upid = 0;
 
 
@@ -36,6 +37,23 @@ void log_err(char* str) {
     printk(KERN_ALERT "kfilter: %s", str);
 }
 
+int send_data(struct net_data* data) {
+    struct nlmsghdr *nlh;
+    struct sk_buff *skb_out;
+    int err, data_size = sizeof(*data);
+
+    skb_out = nlmsg_new(data_size, 0);
+    NETLINK_CB(skb_out).dst_group = 0;
+    nlh = nlmsg_put(skb_out, 0, 0, NLMSG_DONE, data_size, 0);
+    memcpy(nlmsg_data(nlh), data, data_size);
+    err = nlmsg_unicast(nl_sk, skb_out, upid);
+    if (err) {
+        return 1;
+    } else {
+        return 0;
+    }
+};
+
 unsigned int net_hook(void *priv, struct sk_buff *skb, const struct nf_hook_state *state) {
     // filter only incoming packets
     // filter outcoming packets / maybe different functions?
@@ -43,6 +61,7 @@ unsigned int net_hook(void *priv, struct sk_buff *skb, const struct nf_hook_stat
     uint saddr = iph->saddr;
     uint daddr = iph->daddr;
     struct tcphdr* tcph = NULL;
+    int err;
 
     switch (iph->protocol) {
         case IPPROTO_UDP:
@@ -50,6 +69,13 @@ unsigned int net_hook(void *priv, struct sk_buff *skb, const struct nf_hook_stat
             break;
         case IPPROTO_TCP:
             tcph = tcp_hdr(skb);
+            if (upid) {
+                err = send_data(&data);
+                if (err) {
+                    log_err("unable to send data to userspace");
+                    upid = 0;
+                }
+            }
             //printk(KERN_INFO "kfilter: S:%pI4:%d D:%pI4:%d", &saddr, ntohs(tcph->source), &daddr, ntohs(tcph->dest));
             break;
         default:
@@ -61,6 +87,7 @@ unsigned int net_hook(void *priv, struct sk_buff *skb, const struct nf_hook_stat
 };
 
 static void reg_hook(struct sk_buff *skb) {
+    struct service_ctl sctl;
     struct nlmsghdr *nlh;
     struct sk_buff *skb_out;
     pid_t pid;
@@ -94,10 +121,6 @@ static void reg_hook(struct sk_buff *skb) {
     }
 
 }
-
-void send_data(void) {
-
-};
 
 static int filter_init(void) {
     struct netlink_kernel_cfg k_cfg = {
