@@ -5,6 +5,7 @@
 #include <linux/netfilter_ipv6.h>
 #include <linux/ip.h>
 #include <linux/tcp.h>
+#include <linux/udp.h>
 #include <linux/in.h>
 #include <linux/types.h>
 #include <linux/netlink.h>
@@ -55,34 +56,51 @@ int send_data(struct net_data* data) {
 };
 
 unsigned int net_hook(void *priv, struct sk_buff *skb, const struct nf_hook_state *state) {
-    // filter only incoming packets
-    // filter outcoming packets / maybe different functions?
     struct iphdr* iph = ip_hdr(skb);
-    uint saddr = iph->saddr;
-    uint daddr = iph->daddr;
+    struct ethhdr* eth = eth_hdr(skb);
     struct tcphdr* tcph = NULL;
-    int err;
+    struct udphdr* udph = NULL;
+    int err, size;
+    char *ptr;
+
+    if (!upid) {
+        // apply rules here
+        return NF_ACCEPT;
+    }
+
+    printk("SIZE: %d", iph->ihl);
+    memcpy(data.if_name, skb->dev->name, sizeof(data.if_name));
+    memcpy(data.mac_s, eth->h_source, sizeof(data.mac_s));
+    memcpy(data.mac_d, eth->h_dest, sizeof(data.mac_d));
+
+    data.proto_id = iph->protocol;
+    data.ttl = iph->ttl;
+    data.s_addr = iph->saddr;
+    data.d_addr = iph->daddr;
 
     switch (iph->protocol) {
         case IPPROTO_UDP:
-            //printk(KERN_INFO "kfilter: UDP %x %d", skb->tail, skb->len);
+            udph = udp_hdr(skb);
+            data.s_port = ntohs(udph->source);
+            data.d_port = ntohs(udph->dest);
+            // get payload
             break;
         case IPPROTO_TCP:
             tcph = tcp_hdr(skb);
-            if (upid) {
-                err = send_data(&data);
-                if (err) {
-                    log_err("unable to send data to userspace");
-                    upid = 0;
-                }
-            }
-            //printk(KERN_INFO "kfilter: S:%pI4:%d D:%pI4:%d", &saddr, ntohs(tcph->source), &daddr, ntohs(tcph->dest));
-            break;
-        default:
-            //printk(KERN_INFO "kfilter: other protocol %d", iph->protocol);
+            data.s_port = ntohs(tcph->source);
+            data.d_port = ntohs(tcph->dest);
+            // https://stackoverflow.com/questions/6639799/calculate-size-and-start-of-tcp-packet-data-excluding-header#6639856
+            size = sizeof(tcph);
+            printk("TCP SIZE: %d", tcph->doff);
+            // get payload
             break;
     }
 
+    err = send_data(&data);
+    if (err) {
+        log_err("unable to send data to userspace");
+        upid = 0;
+    }
     return NF_ACCEPT;
 };
 

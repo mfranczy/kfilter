@@ -12,10 +12,11 @@
 #define MAX_PORT_SIZE 100
 #define MAX_ADDR_SIZE 100
 #define MAX_SERVICE_MSG_SIZE 1024
+#define IF_NAME_SIZE 16
 
 #pragma pack(push, 1)
 struct tcp_rules { 
-    uint16_t ports[MAX_PORT_SIZE];  // allocate this dynamically?
+    uint16_t ports[MAX_PORT_SIZE];
     uint32_t addr[MAX_ADDR_SIZE][4];
     char mac[6];
 };
@@ -34,13 +35,17 @@ struct net_rules {
 
 // packets data
 struct net_data {
+    // TODO:
+    // - add alias
+    // - add tx (+ dropped)
+    // - add rx (+ dropped)
+    char if_name[IF_NAME_SIZE];
     uint8_t proto_id;
     uint16_t ttl;
-    char if_name[255];
     char mac_s[6];
     char mac_d[6];
-    uint32_t s_addr[4];
-    uint32_t d_addr[4];
+    uint32_t s_addr;
+    uint32_t d_addr;
     uint16_t s_port;
     uint16_t d_port;
     uint64_t len;

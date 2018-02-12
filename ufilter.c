@@ -11,6 +11,14 @@
 #define NETLINK_USER 31
 #define MAX_PAYLOAD sizeof(struct service_ctl)
 
+// TODO:
+// - filter only incoming packets, not outcoming
+// - add filtering over port (set rules from cli)
+// - add filtering over ip addr (set rules from cli)
+// - calculate stats for ip and port and device
+// - integrate logs with grafana
+
+
 struct msghdr msg; // figure out why it can be in main func stack / i need memory dump HOMEWORK!!
 
 
@@ -20,11 +28,12 @@ int main(int argc, char* argv[]) {
     struct iovec iov;
     struct service_ctl sctl;
     struct service_ctl* sctl_resp;
+    struct net_data* data;
     int s_fd, rc;
 
     s_fd = socket(PF_NETLINK, SOCK_RAW, NETLINK_USER);
     if (s_fd < 0) {
-        printf("rcor occured - unable to open NETLINK socket");
+        printf("error occured - unable to open NETLINK socket");
         return -1;
     }
 
@@ -68,17 +77,18 @@ int main(int argc, char* argv[]) {
 
     sctl_resp = (struct service_ctl*)NLMSG_DATA(nlh);
     if (sctl_resp->pid == getpid()) {
-        printf("Ready to work");
         // thread or proc to read packages from kernel
         // but share the sockets
         // watch config files
         while(1) {
-            // get data 
+            // get data
             rc = recvmsg(s_fd, &msg, 0);
             if (rc == -1) {
                 printf("Error: %s", strerror(errno));
                 continue;
             }
+            data = (struct net_data*)NLMSG_DATA(nlh);
+            printf("DATA: %s\n", data->if_name);
 
         };
     } else {
