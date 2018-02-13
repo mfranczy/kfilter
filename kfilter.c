@@ -68,7 +68,7 @@ unsigned int net_hook(void *priv, struct sk_buff *skb, const struct nf_hook_stat
         return NF_ACCEPT;
     }
 
-    printk("SIZE: %d", iph->ihl);
+    printk("TEST ADDR: %p %p", iph, skb->data); // true :)
     memcpy(data.if_name, skb->dev->name, sizeof(data.if_name));
     memcpy(data.mac_s, eth->h_source, sizeof(data.mac_s));
     memcpy(data.mac_d, eth->h_dest, sizeof(data.mac_d));
