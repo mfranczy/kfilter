@@ -10,21 +10,26 @@
 // MAX_PAYLOAD must be <= 32k (for kernel >= 4.9)
 // otherwise 16k
 #define MAX_PORT_SIZE 100
-#define MAX_ADDR_SIZE 100
+#define MAX_RULES_SIZE 100
 #define MAX_SERVICE_MSG_SIZE 1024
 #define IF_NAME_SIZE 16
 
 #pragma pack(push, 1)
-struct tcp_rules { 
+struct rules {
     uint16_t ports[MAX_PORT_SIZE];
-    uint32_t addr[MAX_ADDR_SIZE][4];
+    uint8_t allocated_ports;
+    uint32_t addr;
     char mac[6];
 };
 
+struct tcp_rules {
+    struct rules r[MAX_RULES_SIZE];
+    uint8_t rules_cnt;
+};
+
 struct udp_rules {
-    uint16_t ports[MAX_PORT_SIZE];
-    uint32_t addr[MAX_ADDR_SIZE][4];
-    char mac[6];
+    struct rules r[MAX_RULES_SIZE];
+    uint8_t rules_cnt;
 };
 
 // set rules for module to drop packets

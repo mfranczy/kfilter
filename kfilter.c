@@ -25,7 +25,11 @@ MODULE_DESCRIPTION("Packets filter");
 
 static struct nf_hook_ops nfho;
 static struct sock *nl_sk = NULL;
-struct net_data data;
+static struct net_data data;
+static struct tcp_rules t_rules = {
+    .r[0] = {.addr = 123}
+};
+static struct udp_rules u_rules;
 
 static pid_t upid = 0;
 
@@ -55,20 +59,40 @@ int send_data(struct net_data* data) {
     }
 };
 
+int packet_filter(uint32_t addr, uint16_t port, struct rules* filter_rules) {
+    // keep this in memory
+    printk("TEST %d", filter_rules->addr);
+    return 0;
+};
+
+// optimization is needed here!
+// right now to should that it works
+int port_filter(uint16_t port, uint16_t blocked_ports[]) {
+    int i = 0;
+    for (; i < MAX_PORT_SIZE; i++) {
+        if (port == blocked_ports[i]) {
+            return 1;
+        }
+    }
+    return 0;
+};
+
 unsigned int net_hook(void *priv, struct sk_buff *skb, const struct nf_hook_state *state) {
     struct iphdr* iph = ip_hdr(skb);
     struct ethhdr* eth = eth_hdr(skb);
     struct tcphdr* tcph = NULL;
     struct udphdr* udph = NULL;
-    int err, size;
-    char *ptr;
+    int err;
+    bool drop_packet = false;
 
+    // if there is no userspace program to catch data and filter traffic
+    // then accept everything
     if (!upid) {
-        // apply rules here
+        // clean tcp and udp rules
+        // userspace deamon has to provide rules
         return NF_ACCEPT;
     }
 
-    printk("TEST ADDR: %p %p", iph, skb->data); // true :)
     memcpy(data.if_name, skb->dev->name, sizeof(data.if_name));
     memcpy(data.mac_s, eth->h_source, sizeof(data.mac_s));
     memcpy(data.mac_d, eth->h_dest, sizeof(data.mac_d));
@@ -83,16 +107,17 @@ unsigned int net_hook(void *priv, struct sk_buff *skb, const struct nf_hook_stat
             udph = udp_hdr(skb);
             data.s_port = ntohs(udph->source);
             data.d_port = ntohs(udph->dest);
-            // get payload
+            if (packet_filter(data.d_addr, data.d_port, u_rules.r)) {
+                drop_packet = true;
+            }
             break;
         case IPPROTO_TCP:
             tcph = tcp_hdr(skb);
             data.s_port = ntohs(tcph->source);
             data.d_port = ntohs(tcph->dest);
-            // https://stackoverflow.com/questions/6639799/calculate-size-and-start-of-tcp-packet-data-excluding-header#6639856
-            size = sizeof(tcph);
-            printk("TCP SIZE: %d", tcph->doff);
-            // get payload
+            if (packet_filter(data.d_addr, data.d_port, t_rules.r)) {
+                drop_packet = true;
+            }
             break;
     }
 
@@ -101,10 +126,16 @@ unsigned int net_hook(void *priv, struct sk_buff *skb, const struct nf_hook_stat
         log_err("unable to send data to userspace");
         upid = 0;
     }
+
+    if (drop_packet) {
+        return NF_DROP;
+    }
     return NF_ACCEPT;
 };
 
 static void reg_hook(struct sk_buff *skb) {
+    // read ip/port rules over the netlink
+    // keep in the memory
     struct service_ctl sctl;
     struct nlmsghdr *nlh;
     struct sk_buff *skb_out;
@@ -146,7 +177,7 @@ static int filter_init(void) {
     };
 
     log_info("initializing module...");
-
+    // TODO:filter only incoming packets
     nfho.hook = net_hook;
     nfho.hooknum = NF_INET_PRE_ROUTING;
     nfho.pf = PF_INET;

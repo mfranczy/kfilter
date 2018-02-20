@@ -15,6 +15,7 @@
 // - filter only incoming packets, not outcoming
 // - add filtering over port (set rules from cli)
 // - add filtering over ip addr (set rules from cli)
+// - keep rules in memory for the kernel module, user space read config file
 // - calculate stats for ip and port and device
 // - integrate logs with grafana
 
