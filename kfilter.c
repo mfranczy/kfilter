@@ -27,9 +27,11 @@ static struct nf_hook_ops nfho;
 static struct sock *nl_sk = NULL;
 static struct net_data data;
 static struct tcp_rules t_rules = {
-    .r[0] = {.addr = 123}
+    .rules_cnt = 0
 };
-static struct udp_rules u_rules;
+static struct udp_rules u_rules = {
+    .rules_cnt = 0   
+};
 
 static pid_t upid = 0;
 
@@ -59,19 +61,23 @@ int send_data(struct net_data* data) {
     }
 };
 
-int packet_filter(uint32_t addr, uint16_t port, struct rules* filter_rules) {
-    // keep this in memory
-    printk("TEST %d", filter_rules->addr);
-    return 0;
+void clean_rules(struct rules* fitler_rules) {
+    // add flag if reset is needed, sounds like static var
 };
 
-// optimization is needed here!
-// right now to should that it works
-int port_filter(uint16_t port, uint16_t blocked_ports[]) {
-    int i = 0;
-    for (; i < MAX_PORT_SIZE; i++) {
-        if (port == blocked_ports[i]) {
+// optimze this function !!
+int packet_filter(uint32_t addr, uint16_t port, struct rules* filter_rules, uint8_t rules_cnt) {
+    int i = 0, j = 0;
+    for (; i < rules_cnt; i++, filter_rules++) {
+        if (addr == filter_rules->addr && filter_rules->allocated_ports == 0) {
             return 1;
+        }
+        else if (addr == filter_rules->addr && filter_rules->allocated_ports > 0) {
+            for (; j < filter_rules->allocated_ports; j++) {
+               if (port == filter_rules->ports[j]) {
+                    return 1;
+               }
+            }
         }
     }
     return 0;
@@ -107,7 +113,7 @@ unsigned int net_hook(void *priv, struct sk_buff *skb, const struct nf_hook_stat
             udph = udp_hdr(skb);
             data.s_port = ntohs(udph->source);
             data.d_port = ntohs(udph->dest);
-            if (packet_filter(data.d_addr, data.d_port, u_rules.r)) {
+            if (u_rules.rules_cnt && packet_filter(data.d_addr, data.d_port, u_rules.r, u_rules.rules_cnt)) {
                 drop_packet = true;
             }
             break;
@@ -115,7 +121,7 @@ unsigned int net_hook(void *priv, struct sk_buff *skb, const struct nf_hook_stat
             tcph = tcp_hdr(skb);
             data.s_port = ntohs(tcph->source);
             data.d_port = ntohs(tcph->dest);
-            if (packet_filter(data.d_addr, data.d_port, t_rules.r)) {
+            if (t_rules.rules_cnt && packet_filter(data.d_addr, data.d_port, t_rules.r, t_rules.rules_cnt)) {
                 drop_packet = true;
             }
             break;
