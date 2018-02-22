@@ -34,6 +34,7 @@ static struct udp_rules u_rules = {
 };
 
 static pid_t upid = 0;
+static bool exec_clean = false;
 
 
 void log_info(char* str) {
@@ -61,19 +62,22 @@ int send_data(struct net_data* data) {
     }
 };
 
-void clean_rules(struct rules* fitler_rules) {
-    // add flag if reset is needed, sounds like static var
+// clean counters
+void clean_rules(uint8_t** r_cnt) {
+    for (; *r_cnt != NULL; r_cnt++) {
+        **r_cnt = 0;
+    }
 };
 
 // optimze this function !!
 int packet_filter(uint32_t addr, uint16_t port, struct rules* filter_rules, uint8_t rules_cnt) {
-    int i = 0, j = 0;
-    for (; i < rules_cnt; i++, filter_rules++) {
+    int i, j;
+    for (i = 0; i < rules_cnt; i++, filter_rules++) {
         if (addr == filter_rules->addr && filter_rules->allocated_ports == 0) {
             return 1;
         }
         else if (addr == filter_rules->addr && filter_rules->allocated_ports > 0) {
-            for (; j < filter_rules->allocated_ports; j++) {
+            for (j = 0; j < filter_rules->allocated_ports; j++) {
                if (port == filter_rules->ports[j]) {
                     return 1;
                }
@@ -88,15 +92,19 @@ unsigned int net_hook(void *priv, struct sk_buff *skb, const struct nf_hook_stat
     struct ethhdr* eth = eth_hdr(skb);
     struct tcphdr* tcph = NULL;
     struct udphdr* udph = NULL;
-    int err;
+    // TODO: change line below, this reall ugly in context with NULL at the end!
+    uint8_t* r_cnt_ptr[3] = {&t_rules.rules_cnt, &u_rules.rules_cnt, NULL};
     bool drop_packet = false;
+    int err;
 
     // if there is no userspace program to catch data and filter traffic
     // then accept everything
     if (!upid) {
-        // clean tcp and udp rules
-        // userspace deamon has to provide rules
-        return NF_ACCEPT;
+        if (exec_clean) {
+            clean_rules(r_cnt_ptr);
+            exec_clean = false;
+        }
+        goto done;
     }
 
     memcpy(data.if_name, skb->dev->name, sizeof(data.if_name));
@@ -133,48 +141,54 @@ unsigned int net_hook(void *priv, struct sk_buff *skb, const struct nf_hook_stat
         upid = 0;
     }
 
+done:
     if (drop_packet) {
         return NF_DROP;
     }
     return NF_ACCEPT;
 };
 
+static int send_msg(pid_t pid, struct service_ctl* sctl) {
+    struct nlmsghdr *nlh;
+    struct sk_buff *skb;
+    int sctl_size;
+ 
+    sctl_size = sizeof(*sctl);
+    skb = nlmsg_new(sctl_size, 0);
+    if (!skb) {
+        log_err("unable to create new skb_buff");
+        return 1;
+    }
+
+    nlh = nlmsg_put(skb, 0, 0, NLMSG_DONE, sctl_size, 0);
+    NETLINK_CB(skb).dst_group = 0;
+    memcpy(nlmsg_data(nlh), sctl, sctl_size);
+    return nlmsg_unicast(nl_sk, skb, pid);
+}
+
 static void reg_hook(struct sk_buff *skb) {
-    // read ip/port rules over the netlink
-    // keep in the memory
     struct service_ctl sctl;
     struct nlmsghdr *nlh;
-    struct sk_buff *skb_out;
     pid_t pid;
-    int sctl_size, err;
 
     nlh = (struct nlmsghdr*)skb->data;
     pid = nlh->nlmsg_pid;
     if (upid) {
+        // move here attempt to register new pid
+        // check if you can send message to attached pid
+        // if not it means we can accept new pid
         sctl.pid = upid;
         // strncpy
         log_info("registration for new pid refused");
     } else {
         upid = pid;
         sctl.pid = pid;
+        exec_clean = true;
         log_info("registration for new pid accepted");
     }
-
-    sctl_size = sizeof(sctl);
-    skb_out = nlmsg_new(sctl_size, 0);
-    if (!skb_out) {
-        log_err("unable to create new skb_buff");
-        return;
-    }
-
-    nlh = nlmsg_put(skb_out, 0, 0, NLMSG_DONE, sctl_size, 0);
-    NETLINK_CB(skb_out).dst_group = 0;
-    memcpy(nlmsg_data(nlh), &sctl, sctl_size);
-    err = nlmsg_unicast(nl_sk, skb_out, pid);
-    if (err < 0) {
+    if (send_msg(pid, &sctl) < 0) {
         log_err("could not send registration info back to the userspace client");
     }
-
 }
 
 static int filter_init(void) {
