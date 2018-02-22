@@ -17,6 +17,8 @@
 
 #define NETLINK_USER 31
 
+// TODO: use defined exit codes everywhere!!
+
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Marcin Franczyk");
