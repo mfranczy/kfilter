@@ -50,18 +50,16 @@ void log_err(char* str) {
 int send_data(struct net_data* data) {
     struct nlmsghdr *nlh;
     struct sk_buff *skb_out;
-    int err, data_size = sizeof(*data);
+    int data_size = sizeof(*data);
 
     skb_out = nlmsg_new(data_size, 0);
     NETLINK_CB(skb_out).dst_group = 0;
     nlh = nlmsg_put(skb_out, 0, 0, NLMSG_DONE, data_size, 0);
     memcpy(nlmsg_data(nlh), data, data_size);
-    err = nlmsg_unicast(nl_sk, skb_out, upid);
-    if (err) {
+    if (nlmsg_unicast(nl_sk, skb_out, upid)) {
         return 1;
-    } else {
-        return 0;
     }
+    return 0;
 };
 
 // clean counters
@@ -97,7 +95,6 @@ unsigned int net_hook(void *priv, struct sk_buff *skb, const struct nf_hook_stat
     // TODO: change line below, this reall ugly in context with NULL at the end!
     uint8_t* r_cnt_ptr[3] = {&t_rules.rules_cnt, &u_rules.rules_cnt, NULL};
     bool drop_packet = false;
-    int err;
 
     // if there is no userspace program to catch data and filter traffic
     // then accept everything
@@ -137,8 +134,7 @@ unsigned int net_hook(void *priv, struct sk_buff *skb, const struct nf_hook_stat
             break;
     }
 
-    err = send_data(&data);
-    if (err) {
+    if (send_data(&data)) {
         log_err("unable to send data to userspace");
         upid = 0;
     }
