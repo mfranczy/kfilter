@@ -13,7 +13,7 @@
 #include <net/sock.h>
 #include <net/net_namespace.h>
 
-#include "knetwork.h"
+#include "../knetwork.h"
 
 #define NETLINK_USER 31
 
@@ -36,7 +36,6 @@ static struct udp_rules u_rules = {
 };
 
 static pid_t upid = 0;
-static bool exec_clean = false;
 
 
 void log_info(char* str) {
@@ -50,7 +49,7 @@ void log_err(char* str) {
 int send_data(struct net_data* data) {
     struct nlmsghdr *nlh;
     struct sk_buff *skb_out;
-    int data_size = sizeof(*data);
+    const int data_size = sizeof(*data);
 
     skb_out = nlmsg_new(data_size, 0);
     NETLINK_CB(skb_out).dst_group = 0;
@@ -63,10 +62,15 @@ int send_data(struct net_data* data) {
 };
 
 // clean counters
-void clean_rules(uint8_t** r_cnt) {
-    for (; *r_cnt != NULL; r_cnt++) {
-        **r_cnt = 0;
+// new data should override old one
+void clean_rules(void) {
+    uint8_t* r_cnt[] = {&u_rules.rules_cnt, &t_rules.rules_cnt};
+    const uint8_t r_size = sizeof(r_cnt) / sizeof(uint8_t*);
+    uint8_t i;
+    for (i = 0; i < r_size; i++) {
+        *r_cnt[i] = 0;
     }
+    log_info("tcp and udp rules have been removed");
 };
 
 // optimze this function !!
@@ -92,15 +96,14 @@ unsigned int net_hook(void *priv, struct sk_buff *skb, const struct nf_hook_stat
     struct ethhdr* eth = eth_hdr(skb);
     struct tcphdr* tcph = NULL;
     struct udphdr* udph = NULL;
-    // TODO: change line below, this reall ugly in context with NULL at the end!
-    uint8_t* r_cnt_ptr[3] = {&t_rules.rules_cnt, &u_rules.rules_cnt, NULL};
+    static bool exec_clean = false;
     bool drop_packet = false;
 
     // if there is no userspace program to catch data and filter traffic
     // then accept everything
     if (!upid) {
         if (exec_clean) {
-            clean_rules(r_cnt_ptr);
+            clean_rules();
             exec_clean = false;
         }
         goto done;
@@ -137,6 +140,7 @@ unsigned int net_hook(void *priv, struct sk_buff *skb, const struct nf_hook_stat
     if (send_data(&data)) {
         log_err("unable to send data to userspace");
         upid = 0;
+        exec_clean = true;
     }
 
 done:
@@ -149,9 +153,8 @@ done:
 static int send_msg(pid_t pid, struct service_ctl* sctl) {
     struct nlmsghdr *nlh;
     struct sk_buff *skb;
-    int sctl_size;
+    const int sctl_size = sizeof(*sctl);
  
-    sctl_size = sizeof(*sctl);
     skb = nlmsg_new(sctl_size, 0);
     if (!skb) {
         log_err("unable to create new skb_buff");
@@ -167,25 +170,24 @@ static int send_msg(pid_t pid, struct service_ctl* sctl) {
 static void reg_hook(struct sk_buff *skb) {
     struct service_ctl sctl;
     struct nlmsghdr *nlh;
+    struct net_rules rules;
     pid_t pid;
 
     nlh = (struct nlmsghdr*)skb->data;
     pid = nlh->nlmsg_pid;
-    if (upid) {
-        // move here attempt to register new pid
-        // check if you can send message to attached pid
-        // if not it means we can accept new pid
-        sctl.pid = upid;
-        // strncpy
-        log_info("registration for new pid refused");
+
+    if (upid == pid) {
+        // grab data
+        log_info("ready to receive data");
     } else {
-        upid = pid;
-        sctl.pid = pid;
-        exec_clean = true;
-        log_info("registration for new pid accepted");
-    }
-    if (send_msg(pid, &sctl) < 0) {
-        log_err("could not send registration info back to the userspace client");
+        // registration attempt
+        if ((upid && send_msg(upid, &sctl) < 0) || !upid) {
+            upid = pid;
+        }
+        sctl.pid = upid;
+        if (send_msg(pid, &sctl) < 0) {
+            log_err("could not send registration info back to the userspace client");
+        }
     }
 }
 

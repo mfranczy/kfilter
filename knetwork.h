@@ -11,7 +11,6 @@
 // otherwise 16k
 #define MAX_PORT_SIZE 100
 #define MAX_RULES_SIZE 100
-#define MAX_SERVICE_MSG_SIZE 1024
 #define IF_NAME_SIZE 16
 
 #pragma pack(push, 1)
@@ -60,8 +59,8 @@ struct net_data {
 
 // control structure, to check if userspace program can listen for incoming packets
 struct service_ctl {
-    int pid;
-    char msg[MAX_SERVICE_MSG_SIZE];
+    pid_t pid;
+    char msg[1024];
 };
 #pragma pack(pop)
 
