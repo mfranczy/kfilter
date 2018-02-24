@@ -20,7 +20,7 @@
 // - integrate logs with grafana
 
 
-struct msghdr msg; // figure out why it can be in main func stack / i need memory dump HOMEWORK!!
+static struct msghdr msg; // figure out why it can be in main func stack / i need memory dump HOMEWORK!!
 
 int open_netlink_sock(void) {
     struct sockaddr_nl s_addr;
@@ -80,6 +80,23 @@ void set_msg_hdr(struct nlmsghdr* nlh) {
     msg.msg_iovlen = 1;
 };
 
+int register_subscriber(int fd, struct nlmsghdr* nlh) {
+    struct service_ctl sctl;
+    struct service_ctl* res_sctl = NULL;
+
+    printf("Registration attempt..\n");
+    memcpy(NLMSG_DATA(nlh), &sctl, sizeof(sctl));
+    sendmsg(fd, &msg, 0);
+
+    printf("Wait for response..\n");
+    recvmsg(fd, &msg, 0);
+
+    res_sctl = (struct service_ctl*)NLMSG_DATA(nlh);
+    if (res_sctl->pid == getpid())
+        return 0;
+    return 1;
+}
+
 int main(int argc, char* argv[]) {
     struct nlmsghdr *nlh = NULL;
     struct service_ctl* sctl_resp = NULL;
@@ -98,30 +115,25 @@ int main(int argc, char* argv[]) {
     }
     set_msg_hdr(nlh);
     memcpy(NLMSG_DATA(nlh), &sctl, sizeof(sctl));
- 
-    printf("Sending register msg to kfilter\n");
-    sendmsg(s_fd, &msg, 0);
-    printf("Message has been sent\n");
-    recvmsg(s_fd, &msg, 0);
-    printf("Let's work");
 
-    sctl_resp = (struct service_ctl*)NLMSG_DATA(nlh);
-    if (sctl_resp->pid == getpid()) {
-        // thread or proc to read packages from kernel
-        // but share the sockets
-        // watch config files
-        while(1) {
-            // get data
-            if (recvmsg(s_fd, &msg, 0) < 0) {
-                perror("Unable to get data from kernel");
-                continue;
-            }
-            data = (struct net_data*)NLMSG_DATA(nlh);
-            printf("DATA: %s\n", data->if_name);
-        };
-    } else {
-        printf("Module is already sending packets to pid: %d", sctl_resp->pid);
+    if (register_subscriber(s_fd, nlh)) {
+        printf("Filter is already sending packtes to different process\n");
+        return 1;
     }
+    printf("Succeed, waiting for data..\n");
+ 
+    // thread or proc to read packages from kernel
+    // but share the sockets
+    // watch config files
+    while(1) {
+        // get data
+        if (recvmsg(s_fd, &msg, 0) < 0) {
+            perror("Unable to get data from kernel");
+            continue;
+        }
+        data = (struct net_data*)NLMSG_DATA(nlh);
+        printf("DATA: %s\n", data->if_name);
+    };
 
     free(nlh);
     free(sctl_resp);
