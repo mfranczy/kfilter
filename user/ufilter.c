@@ -1,15 +1,19 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/socket.h>
+#include <sys/inotify.h>
 #include <linux/netlink.h>
 #include <unistd.h>
 #include <string.h>
+#include <limits.h>
 #include <errno.h>
 
 #include "../knetwork.h"
 
 #define NETLINK_USER 31
+#define NET_RULES_PATH "/etc/kfilter/netrules"
 #define MAX_PAYLOAD sizeof(struct service_ctl)
+#define BUF_LEN (10 * (sizeof(struct inotify_event) + PATH_MAX + 1))
 
 // TODO:
 // - filter only incoming packets, not outcoming
@@ -18,6 +22,7 @@
 // - keep rules in memory for the kernel module, user space read config file
 // - calculate stats for ip and port and device
 // - integrate logs with grafana
+// - watch rules by inotify
 
 
 static struct msghdr msg; // figure out why it can be in main func stack / i need memory dump HOMEWORK!!
@@ -102,8 +107,18 @@ int main(int argc, char* argv[]) {
     struct service_ctl* sctl_resp = NULL;
     struct service_ctl sctl;
     struct net_data* data;
-    int s_fd;
+    char buf[BUF_LEN] __attribute__ ((aligned(8)));
+    int s_fd, if_fd;
+    ssize_t num;
 
+    printf("Initializing inotify..\n");
+    if_fd = inotify_init();
+    if (if_fd < 0) {
+        perror("Unable to initialize inotify\n");
+        return 1;
+    }
+
+    printf("Opening netlink socket..\n");
     s_fd = open_netlink_sock();
     if (s_fd < 0) {
         return 1;
@@ -117,11 +132,27 @@ int main(int argc, char* argv[]) {
     memcpy(NLMSG_DATA(nlh), &sctl, sizeof(sctl));
 
     if (register_subscriber(s_fd, nlh)) {
-        printf("Filter is already sending packtes to different process\n");
+        perror("Filter is already sending packtes to different process\n");
         return 1;
     }
     printf("Succeed, waiting for data..\n");
+
+    // first send net rules to kernel
+    if (inotify_add_watch(if_fd, NET_RULES_PATH, IN_ALL_EVENTS) < 0) {
+        perror("Unable to watch netrules file");
+        return 1;
+    }
  
+    for(;;) {
+        num = read(if_fd, buf, BUF_LEN);
+        if (num == 0) {
+            perror("Fatal");
+        }
+        if (num < 0) {
+            perror("Err");
+        }
+        fprintf(stderr, "New change");
+    };
     // thread or proc to read packages from kernel
     // but share the sockets
     // watch config files
