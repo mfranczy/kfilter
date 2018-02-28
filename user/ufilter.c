@@ -16,7 +16,6 @@
 #define NETLINK_USER 31
 #define NET_RULES_PATH "/etc/kfilter/netrules"
 #define MAX_PAYLOAD 1024
-#define BUF_LEN (10 * (sizeof(struct inotify_event) + PATH_MAX + 1))
 
 // TODO:
 // - REFACTORING - CHECK SEG FAULT!
@@ -171,7 +170,6 @@ int main(int argc, char* argv[]) {
         }
     };
     struct net_data* data;
-    char buf[BUF_LEN] __attribute__ ((aligned(8)));
     int s_fd;
     ssize_t num;
 
