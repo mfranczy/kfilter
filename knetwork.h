@@ -14,20 +14,18 @@
 #define IF_NAME_SIZE 16
 
 #pragma pack(push, 1)
-struct rules {
-    uint16_t ports[MAX_PORT_SIZE];
-    uint8_t allocated_ports;
+struct rule {
+    uint16_t port;
     uint32_t addr;
-    char mac[6];
 };
 
 struct tcp_rules {
-    struct rules r[MAX_RULES_SIZE];
+    struct rule r[MAX_RULES_SIZE];
     uint8_t rules_cnt;
 };
 
 struct udp_rules {
-    struct rules r[MAX_RULES_SIZE];
+    struct rule r[MAX_RULES_SIZE];
     uint8_t rules_cnt;
 };
 

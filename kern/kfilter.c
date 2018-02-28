@@ -74,18 +74,12 @@ void clean_rules(void) {
 };
 
 // optimze this function !!
-int packet_filter(uint32_t addr, uint16_t port, struct rules* filter_rules, uint8_t rules_cnt) {
-    int i, j;
+// TODO: fix this function
+int packet_filter(uint32_t addr, uint16_t port, struct rule* filter_rules, uint8_t rules_cnt) {
+    int i;
     for (i = 0; i < rules_cnt; i++, filter_rules++) {
-        if (addr == filter_rules->addr && filter_rules->allocated_ports == 0) {
+        if (addr == filter_rules->addr && port == filter_rules->port) {
             return 1;
-        }
-        else if (addr == filter_rules->addr && filter_rules->allocated_ports > 0) {
-            for (j = 0; j < filter_rules->allocated_ports; j++) {
-               if (port == filter_rules->ports[j]) {
-                    return 1;
-               }
-            }
         }
     }
     return 0;
@@ -150,6 +144,7 @@ done:
     return NF_ACCEPT;
 };
 
+// check memory dump
 static int send_msg(pid_t pid, struct service_ctl* sctl) {
     struct nlmsghdr *nlh;
     struct sk_buff *skb;
@@ -170,15 +165,16 @@ static int send_msg(pid_t pid, struct service_ctl* sctl) {
 static void reg_hook(struct sk_buff *skb) {
     struct service_ctl sctl;
     struct nlmsghdr *nlh;
-    struct net_rules rules;
+    struct net_rules* rules;
     pid_t pid;
 
     nlh = (struct nlmsghdr*)skb->data;
     pid = nlh->nlmsg_pid;
 
     if (upid == pid) {
-        // grab data
-        log_info("ready to receive data");
+        rules = (struct net_rules*)NLMSG_DATA(nlh);
+        memcpy(&t_rules, &rules->t_rules, sizeof(struct tcp_rules));
+        memcpy(&u_rules, &rules->u_rules, sizeof(struct udp_rules));
     } else {
         // registration attempt
         if ((upid && send_msg(upid, &sctl) < 0) || !upid) {

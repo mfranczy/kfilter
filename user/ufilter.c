@@ -1,28 +1,32 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/socket.h>
+#include <arpa/inet.h>
 #include <sys/inotify.h>
 #include <linux/netlink.h>
 #include <unistd.h>
 #include <string.h>
 #include <limits.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 #include <errno.h>
 
 #include "../knetwork.h"
 
 #define NETLINK_USER 31
 #define NET_RULES_PATH "/etc/kfilter/netrules"
-#define MAX_PAYLOAD sizeof(struct service_ctl)
+#define MAX_PAYLOAD 1024
 #define BUF_LEN (10 * (sizeof(struct inotify_event) + PATH_MAX + 1))
 
 // TODO:
+// - REFACTORING - CHECK SEG FAULT!
 // - filter only incoming packets, not outcoming
 // - add filtering over port (set rules from cli)
 // - add filtering over ip addr (set rules from cli)
 // - keep rules in memory for the kernel module, user space read config file
 // - calculate stats for ip and port and device
 // - integrate logs with grafana
-// - watch rules by inotify
+// - watch rules by inotify (nice to have)
 
 
 static struct msghdr msg; // figure out why it can be in main func stack / i need memory dump HOMEWORK!!
@@ -102,21 +106,76 @@ int register_subscriber(int fd, struct nlmsghdr* nlh) {
     return 1;
 }
 
+int send_net_rules(int fd, struct nlmsghdr* nlh, struct net_rules* n_rules) {
+    memcpy(NLMSG_DATA(nlh), n_rules, sizeof(struct net_rules));
+    sendmsg(fd, &msg, 0);
+    return 0;
+}
+
+void set_netrules(struct net_rules* n_rules) {
+    FILE* fp = NULL;
+    char* rule = NULL;
+    char* token = NULL;
+    char proto[4];
+    size_t len = 0;
+    ssize_t read;
+    int i = 0, j = 0;
+
+    fp = fopen(NET_RULES_PATH, "r");
+    if (fp == NULL) {
+        perror("Unable to read netrules..\n");
+        return;
+    }
+    
+    // this is so so so bad, refactoring needed!
+    // only for test now
+    while((read = getline(&rule, &len, fp)) > 0) {
+        j = 0;
+        printf("%s", rule);
+        // sound like recursion
+        while ((token = strsep(&rule, ":")) != NULL || j < 3) {
+            if (j == 0) {
+                strncpy(proto, token, 3);
+            }
+            if (strcmp(proto, "TCP") == 0) {
+                if (j == 1) {
+                    n_rules->t_rules.rules_cnt++;
+                    inet_pton(AF_INET, token, &n_rules->t_rules.r[i].addr);
+                } else if (j == 2) {
+                    n_rules->t_rules.r[i].port = strtoul(token, (char**)NULL, 10);
+                }
+            } else if (strcmp(proto, "UDP") == 0) {
+                if (j == 1) {
+                    n_rules->u_rules.rules_cnt++;
+                    inet_pton(AF_INET, token, &n_rules->u_rules.r[i].addr);
+                } else if (j == 2) {
+                    n_rules->u_rules.r[i].port = strtoul(token, (char**)NULL, 10);
+                }
+            }
+            j++;
+        }
+        i++;
+    }
+
+    fclose(fp);
+    free(rule);
+    free(token);
+}
+
 int main(int argc, char* argv[]) {
     struct nlmsghdr *nlh = NULL;
-    struct service_ctl* sctl_resp = NULL;
-    struct service_ctl sctl;
+    struct net_rules n_rules = {
+        .t_rules = {
+            .rules_cnt = 0
+        },
+        .u_rules = {
+            .rules_cnt = 0
+        }
+    };
     struct net_data* data;
     char buf[BUF_LEN] __attribute__ ((aligned(8)));
-    int s_fd, if_fd;
+    int s_fd;
     ssize_t num;
-
-    printf("Initializing inotify..\n");
-    if_fd = inotify_init();
-    if (if_fd < 0) {
-        perror("Unable to initialize inotify\n");
-        return 1;
-    }
 
     printf("Opening netlink socket..\n");
     s_fd = open_netlink_sock();
@@ -129,33 +188,31 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     set_msg_hdr(nlh);
-    memcpy(NLMSG_DATA(nlh), &sctl, sizeof(sctl));
 
     if (register_subscriber(s_fd, nlh)) {
         perror("Filter is already sending packtes to different process\n");
         return 1;
     }
-    printf("Succeed, waiting for data..\n");
+    free(nlh);
 
-    // first send net rules to kernel
-    if (inotify_add_watch(if_fd, NET_RULES_PATH, IN_ALL_EVENTS) < 0) {
-        perror("Unable to watch netrules file");
+    nlh = set_nlh();
+    if (nlh == NULL) {
         return 1;
     }
- 
-    for(;;) {
-        num = read(if_fd, buf, BUF_LEN);
-        if (num == 0) {
-            perror("Fatal");
-        }
-        if (num < 0) {
-            perror("Err");
-        }
-        fprintf(stderr, "New change");
-    };
-    // thread or proc to read packages from kernel
-    // but share the sockets
-    // watch config files
+    set_msg_hdr(nlh);
+
+    // when should i use free on pointer
+    printf("Reading net rules..\n\n");
+    set_netrules(&n_rules);
+
+    printf("\nSending net rules to kernel module..\n");
+    if (send_net_rules(s_fd, nlh, &n_rules)) {
+        perror("Unable to send net rules");
+        return 1;
+    }
+
+    printf("Succeed, waiting for data..\n");
+
     while(1) {
         // get data
         if (recvmsg(s_fd, &msg, 0) < 0) {
@@ -167,7 +224,6 @@ int main(int argc, char* argv[]) {
     };
 
     free(nlh);
-    free(sctl_resp);
 
     close(s_fd);
     return 0;
