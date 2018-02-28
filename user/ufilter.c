@@ -158,8 +158,6 @@ void set_netrules(struct net_rules* n_rules) {
     }
 
     fclose(fp);
-    free(rule);
-    free(token);
 }
 
 int main(int argc, char* argv[]) {
@@ -201,9 +199,9 @@ int main(int argc, char* argv[]) {
     }
     set_msg_hdr(nlh);
 
-    // when should i use free on pointer
     printf("Reading net rules..\n\n");
     set_netrules(&n_rules);
+    free(nlh);
 
     printf("\nSending net rules to kernel module..\n");
     if (send_net_rules(s_fd, nlh, &n_rules)) {
@@ -222,8 +220,6 @@ int main(int argc, char* argv[]) {
         data = (struct net_data*)NLMSG_DATA(nlh);
         printf("DATA: %s\n", data->if_name);
     };
-
-    free(nlh);
 
     close(s_fd);
     return 0;

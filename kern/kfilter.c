@@ -73,10 +73,9 @@ void clean_rules(void) {
     log_info("tcp and udp rules have been removed");
 };
 
-// optimze this function !!
-// TODO: fix this function
 int packet_filter(uint32_t addr, uint16_t port, struct rule* filter_rules, uint8_t rules_cnt) {
     int i;
+    // TODO: probably fix ports order
     for (i = 0; i < rules_cnt; i++, filter_rules++) {
         if (addr == filter_rules->addr && port == filter_rules->port) {
             return 1;
