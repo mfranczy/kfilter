@@ -190,7 +190,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     free(nlh);
-
+    // nlh should be cleaned and then sent again
     nlh = set_nlh();
     if (nlh == NULL) {
         return 1;
@@ -199,7 +199,6 @@ int main(int argc, char* argv[]) {
 
     printf("Reading net rules..\n\n");
     set_netrules(&n_rules);
-    free(nlh);
 
     printf("\nSending net rules to kernel module..\n");
     if (send_net_rules(s_fd, nlh, &n_rules)) {
@@ -219,6 +218,7 @@ int main(int argc, char* argv[]) {
         printf("DATA: %s\n", data->if_name);
     };
 
+    free(nlh);
     close(s_fd);
     return 0;
 }
