@@ -131,7 +131,7 @@ void set_netrules(struct net_rules* n_rules) {
     while((read = getline(&rule, &len, fp)) > 0) {
         j = 0;
         printf("%s", rule);
-        // sound like recursion
+        // sounds like recursion
         while ((token = strsep(&rule, ":")) != NULL || j < 3) {
             if (j == 0) {
                 strncpy(proto, token, 3);
@@ -159,6 +159,17 @@ void set_netrules(struct net_rules* n_rules) {
     fclose(fp);
 }
 
+char* proto_txt(uint16_t proto_id) {
+    switch(proto_id) {
+    case 6:
+        return "TCP";
+    case 17:
+        return "UDP";
+    default:
+        return "UNKNOWN";
+    }
+}
+
 int main(int argc, char* argv[]) {
     struct nlmsghdr *nlh = NULL;
     struct net_rules n_rules = {
@@ -172,6 +183,7 @@ int main(int argc, char* argv[]) {
     struct net_data* data;
     int s_fd;
     ssize_t num;
+    char s_ip[INET_ADDRSTRLEN], d_ip[INET_ADDRSTRLEN];
 
     printf("Opening netlink socket..\n");
     s_fd = open_netlink_sock();
@@ -190,7 +202,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     free(nlh);
-    // nlh should be cleaned and then sent again
+
     nlh = set_nlh();
     if (nlh == NULL) {
         return 1;
@@ -209,13 +221,16 @@ int main(int argc, char* argv[]) {
     printf("Succeed, waiting for data..\n");
 
     while(1) {
-        // get data
         if (recvmsg(s_fd, &msg, 0) < 0) {
             perror("Unable to get data from kernel");
             continue;
         }
         data = (struct net_data*)NLMSG_DATA(nlh);
-        printf("DATA: %s\n", data->if_name);
+        inet_ntop(AF_INET, &data->s_addr, s_ip, INET_ADDRSTRLEN);
+        inet_ntop(AF_INET, &data->d_addr, d_ip, INET_ADDRSTRLEN);
+
+        printf("%s %s - F:%s:%d L:%s:%d\n", proto_txt(data->proto_id), data->if_name, s_ip, data->s_port, d_ip,
+                data->d_port);
     };
 
     free(nlh);

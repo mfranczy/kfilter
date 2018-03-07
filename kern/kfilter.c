@@ -75,7 +75,6 @@ void clean_rules(void) {
 
 int packet_filter(uint32_t addr, uint16_t port, struct rule* filter_rules, uint8_t rules_cnt) {
     int i;
-    // TODO: probably fix ports order
     for (i = 0; i < rules_cnt; i++, filter_rules++) {
         if (addr == filter_rules->addr && port == filter_rules->port) {
             return 1;
@@ -116,7 +115,7 @@ unsigned int net_hook(void *priv, struct sk_buff *skb, const struct nf_hook_stat
             udph = udp_hdr(skb);
             data.s_port = ntohs(udph->source);
             data.d_port = ntohs(udph->dest);
-            if (u_rules.rules_cnt && packet_filter(data.d_addr, data.d_port, u_rules.r, u_rules.rules_cnt)) {
+            if (u_rules.rules_cnt && packet_filter(data.s_addr, data.s_port, u_rules.r, u_rules.rules_cnt)) {
                 drop_packet = true;
             }
             break;
@@ -124,7 +123,7 @@ unsigned int net_hook(void *priv, struct sk_buff *skb, const struct nf_hook_stat
             tcph = tcp_hdr(skb);
             data.s_port = ntohs(tcph->source);
             data.d_port = ntohs(tcph->dest);
-            if (t_rules.rules_cnt && packet_filter(data.d_addr, data.d_port, t_rules.r, t_rules.rules_cnt)) {
+            if (t_rules.rules_cnt && packet_filter(data.s_addr, data.s_port, t_rules.r, t_rules.rules_cnt)) {
                 drop_packet = true;
             }
             break;
@@ -194,7 +193,7 @@ static int filter_init(void) {
     log_info("initializing module...");
     // TODO:filter only incoming packets
     nfho.hook = net_hook;
-    nfho.hooknum = NF_INET_PRE_ROUTING;
+    nfho.hooknum = NF_INET_LOCAL_IN;
     nfho.pf = PF_INET;
     nfho.priority = NF_IP_PRI_FIRST;
 

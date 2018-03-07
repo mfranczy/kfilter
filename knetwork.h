@@ -51,8 +51,6 @@ struct net_data {
     uint16_t s_port;
     uint16_t d_port;
     uint64_t len;
-    char payload[15625];
-    char extra_info[255];
 };
 
 // control structure, to check if userspace program can listen for incoming packets
