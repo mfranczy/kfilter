@@ -12,6 +12,7 @@
 #include <errno.h>
 
 #include "../knetwork.h"
+#include "metrics.h"
 
 #define NETLINK_USER 31
 #define NET_RULES_PATH "/etc/kfilter/netrules"
@@ -172,6 +173,7 @@ char* proto_txt(uint16_t proto_id) {
 
 int main(int argc, char* argv[]) {
     struct nlmsghdr *nlh = NULL;
+    struct metrics m_data;
     struct net_rules n_rules = {
         .t_rules = {
             .rules_cnt = 0
@@ -181,7 +183,7 @@ int main(int argc, char* argv[]) {
         }
     };
     struct net_data* data;
-    int s_fd;
+    int s_fd, infdb_fd;
     ssize_t num;
     char s_ip[INET_ADDRSTRLEN], d_ip[INET_ADDRSTRLEN];
 
@@ -202,7 +204,6 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     free(nlh);
-
     nlh = set_nlh();
     if (nlh == NULL) {
         return 1;
@@ -217,6 +218,13 @@ int main(int argc, char* argv[]) {
         perror("Unable to send net rules");
         return 1;
     }
+    
+    printf("Connecting to influxdb..\n");
+    infdb_fd = connect_to_influxdb();
+    if (infdb_fd < 0) {
+        perror("Unable to connect to influxdb");
+        return 1;
+    }
 
     printf("Succeed, waiting for data..\n");
 
@@ -229,11 +237,20 @@ int main(int argc, char* argv[]) {
         inet_ntop(AF_INET, &data->s_addr, s_ip, INET_ADDRSTRLEN);
         inet_ntop(AF_INET, &data->d_addr, d_ip, INET_ADDRSTRLEN);
 
+        strncpy(m_data.protocol, proto_txt(data->proto_id), 4);
+        strncpy(m_data.interface, data->if_name, sizeof(data->if_name));
+        strncpy(m_data.ip, s_ip, INET_ADDRSTRLEN);
+        m_data.port = data->d_port;
+
         printf("%s %s - F:%s:%d L:%s:%d\n", proto_txt(data->proto_id), data->if_name, s_ip, data->s_port, d_ip,
                 data->d_port);
+ 
+        // send data to influxdb
+        send_data(infdb_fd, &m_data);
     };
 
     free(nlh);
     close(s_fd);
+    close(infdb_fd);
     return 0;
 }

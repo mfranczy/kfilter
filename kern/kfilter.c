@@ -101,6 +101,11 @@ unsigned int net_hook(void *priv, struct sk_buff *skb, const struct nf_hook_stat
         goto done;
     }
 
+    // don't send packets from lo and docker interfaces
+    if (strcmp(skb->dev->name, "lo") == 0 || strcmp(skb->dev->name, "docker0") == 0) {
+        goto done;
+    }
+
     memcpy(data.if_name, skb->dev->name, sizeof(data.if_name));
     memcpy(data.mac_s, eth->h_source, sizeof(data.mac_s));
     memcpy(data.mac_d, eth->h_dest, sizeof(data.mac_d));
