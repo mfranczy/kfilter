@@ -17,7 +17,6 @@
 
 #define NETLINK_USER 31
 
-// TODO: use defined exit codes everywhere!!
 
 
 MODULE_LICENSE("GPL");
@@ -61,8 +60,6 @@ int send_data(struct net_data* data) {
     return 0;
 };
 
-// clean counters
-// new data should override old one
 void clean_rules(void) {
     uint8_t* r_cnt[] = {&u_rules.rules_cnt, &t_rules.rules_cnt};
     const uint8_t r_size = sizeof(r_cnt) / sizeof(uint8_t*);
@@ -91,8 +88,6 @@ unsigned int net_hook(void *priv, struct sk_buff *skb, const struct nf_hook_stat
     static bool exec_clean = false;
     bool drop_packet = false;
 
-    // if there is no userspace program to catch data and filter traffic
-    // then accept everything
     if (!upid) {
         if (exec_clean) {
             clean_rules();
@@ -147,7 +142,6 @@ done:
     return NF_ACCEPT;
 };
 
-// check memory dump
 static int send_msg(pid_t pid, struct service_ctl* sctl) {
     struct nlmsghdr *nlh;
     struct sk_buff *skb;
@@ -196,7 +190,6 @@ static int filter_init(void) {
     };
 
     log_info("initializing module...");
-    // TODO:filter only incoming packets
     nfho.hook = net_hook;
     nfho.hooknum = NF_INET_LOCAL_IN;
     nfho.pf = PF_INET;
